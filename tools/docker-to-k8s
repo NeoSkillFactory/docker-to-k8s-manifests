@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { DockerfileParser } = require('../scripts/dockerfile-parser');
+const { ComposeParser } = require('../scripts/compose-parser');
+const { K8sGenerator } = require('../scripts/k8s-generator');
+const { ManifestValidator } = require('../scripts/manifest-validator');
+
+function parseArgs(argv) {
+  const args = {
+    dockerfile: null,
+    compose: null,
+    output: null,
+    name: null,
+    namespace: 'default',
+    replicas: 2,
+    validate: true,
+    help: false,
+  };
+
+  for (let i = 2; i < argv.length; i++) {
+    switch (argv[i]) {
+      case '--dockerfile':
+      case '-d':
+        args.dockerfile = argv[++i];
+        break;
+      case '--compose':
+      case '-c':
+        args.compose = argv[++i];
+        break;
+      case '--output':
+      case '-o':
+        args.output = argv[++i];
+        break;
+      case '--name':
+      case '-n':
+        args.name = argv[++i];
+        break;
+      case '--namespace':
+        args.namespace = argv[++i];
+        break;
+      case '--replicas':
+      case '-r':
+        args.replicas = parseInt(argv[++i], 10);
+        break;
+      case '--no-validate':
+        args.validate = false;
+        break;
+      case '--help':
+      case '-h':
+        args.help = true;
+        break;
+    }
+  }
+  return args;
+}
+
+function printHelp() {
+  console.log(`
+docker-to-k8s - Generate Kubernetes manifests from Docker configurations
+
+USAGE:
+  docker-to-k8s --dockerfile <path> [options]
+  docker-to-k8s --compose <path> [options]
+
+OPTIONS:
+  -d, --dockerfile <path>   Path to Dockerfile
+  -c, --compose <path>      Path to docker-compose.yml
+  -o, --output <path>       Output directory (default: stdout)
+  -n, --name <name>         Application name (inferred if not set)
+      --namespace <ns>      Kubernetes namespace (default: "default")
+  -r, --replicas <n>        Number of replicas (default: 2)
+      --no-validate         Skip manifest validation
+  -h, --help                Show this help
+
+EXAMPLES:
+  docker-to-k8s --dockerfile ./Dockerfile --name my-app
+  docker-to-k8s --compose ./docker-compose.yml --output ./k8s/
+  docker-to-k8s -d ./Dockerfile -o ./manifests -n api --replicas 3
+`);
+}
+
+function writeManifests(yamlStr, outputDir, manifests) {
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  // Write individual files per kind
+  const kindCounts = {};
+  for (const manifest of manifests) {
+    const kind = manifest.kind.toLowerCase();
+    const name = manifest.metadata.name;
+    const count = kindCounts[kind] || 0;
+    kindCounts[kind] = count + 1;
+
+    const filename = `${name}-${kind}.yaml`;
+    const content = require('js-yaml').dump(manifest, { lineWidth: -1, noRefs: true, quotingType: '"' });
+    fs.writeFileSync(path.join(outputDir, filename), content, 'utf-8');
+  }
+
+  // Write combined file
+  fs.writeFileSync(path.join(outputDir, 'all-manifests.yaml'), yamlStr, 'utf-8');
+}
+
+function main() {
+  const args = parseArgs(process.argv);
+
+  if (args.help) {
+    printHelp();
+    process.exit(0);
+  }
+
+  if (!args.dockerfile && !args.compose) {
+    console.error('Error: Specify --dockerfile or --compose');
+    printHelp();
+    process.exit(1);
+  }
+
+  try {
+    const generator = new K8sGenerator();
+    let manifests;
+
+    if (args.compose) {
+      const parser = new ComposeParser();
+      const config = parser.parseFile(args.compose);
+      manifests = generator.generateFromCompose(config, {
+        namespace: args.namespace,
+      });
+      console.error(`Parsed ${config.services.length} service(s) from docker-compose`);
+    } else {
+      const parser = new DockerfileParser();
+      const config = parser.parseFile(args.dockerfile);
+      const options = {
+        name: args.name,
+        namespace: args.namespace,
+        replicas: args.replicas,
+      };
+      manifests = generator.generate(config, options);
+      console.error(`Parsed Dockerfile (${config.appType} app, ${config.exposedPorts.length} port(s))`);
+    }
+
+    // Validate
+    if (args.validate) {
+      const validator = new ManifestValidator();
+      const validation = validator.validateAll(manifests);
+      for (const result of validation.results) {
+        if (result.errors.length > 0) {
+          console.error(`[${result.kind}/${result.name}] Warnings:`);
+          for (const err of result.errors) {
+            console.error(`  - ${err}`);
+          }
+        }
+      }
+    }
+
+    const yamlOutput = generator.toYAML(manifests);
+
+    if (args.output) {
+      writeManifests(yamlOutput, args.output, manifests);
+      console.error(`Wrote ${manifests.length} manifest(s) to ${args.output}/`);
+    } else {
+      console.log(yamlOutput);
+    }
+
+    console.error('Done.');
+    process.exit(0);
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+main();
