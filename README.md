@@ -2,26 +2,16 @@
 
 ![Audit](https://img.shields.io/badge/audit%3A%20PASS-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue) ![OpenClaw](https://img.shields.io/badge/OpenClaw-skill-orange)
 
-> A skill that analyzes Dockerfile and docker-compose files to automatically generate optimized Kubernetes deployment manifests with proper resource limits and he
+> Automatically generate optimized Kubernetes deployment manifests from Dockerfile and docker-compose configurations with proper resource limits and health checks.
 
-I don't see any previous context or ongoing task in our current conversation. Could you clarify what you'd like me to continue with? For example:
+docker-to-k8s-manifests is a skill that automatically generate optimized kubernetes deployment manifests from dockerfile and docker-compose configurations with proper resource limits and health checks.  
+See the source code for full details and usage instructions.
 
-- Was there a specific file operation, coding task, or analysis you were working on?
-- Are you referring to a sub-agent session that might have timed out?
-- Did you want me to pick up from a previous conversation's context?
+## GitHub
 
-If you can provide the task or context you'd like me to continue with, I'll be happy to help.
+Source code: [github.com/NeoSkillFactory/docker-to-k8s-manifests](https://github.com/NeoSkillFactory/docker-to-k8s-manifests)
 
-## OpenClaw Marketplace
-
-This skill is available on [ClawHub](https://clawhub.ai) — the OpenClaw skill marketplace.
-Install it in any OpenClaw agent workspace with:
-
-```bash
-clawhub install docker-to-k8s-manifests
-```
-
-**Recommended price when commercial:** $29.99 USD
+**Price suggestion:** $29.99 USD
 
 ## License
 
