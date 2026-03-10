@@ -11,8 +11,6 @@ See the source code for full details and usage instructions.
 
 Source code: [github.com/NeoSkillFactory/docker-to-k8s-manifests](https://github.com/NeoSkillFactory/docker-to-k8s-manifests)
 
-**Price suggestion:** $29.99 USD
-
 ## License
 
 MIT © NeoSkillFactory
