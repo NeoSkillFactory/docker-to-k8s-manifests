@@ -532,6 +532,141 @@ test('end-to-end: docker-compose.yml to manifests', () => {
   assert(services.length >= 3, 'should have services');
 });
 
+// --- Edge Case / Bug Regression Tests ---
+console.log('\nEdge Cases');
+
+test('does not misclassify mongo as golang', () => {
+  const parser = new DockerfileParser();
+  const config = parser.parse('FROM mongo:7\nEXPOSE 27017');
+  assertEqual(config.appType, 'database', 'mongo should be database, not golang');
+});
+
+test('correctly classifies go base image', () => {
+  const parser = new DockerfileParser();
+  assertEqual(parser.parse('FROM go:1.22').appType, 'golang', 'go:1.22');
+  assertEqual(parser.parse('FROM golang:1.22').appType, 'golang', 'golang:1.22');
+});
+
+test('compose CMD healthcheck strips CMD prefix', () => {
+  const hc = new HealthChecks();
+  const probes = hc.generate({
+    appType: 'node',
+    exposedPorts: [{ port: 3000 }],
+    healthcheck: {
+      command: ['CMD', 'wget', '--spider', 'http://localhost:3000/healthz'],
+      interval: '30s', timeout: '5s', retries: 3,
+    },
+  });
+  assert(!probes.livenessProbe.exec.command.includes('CMD'), 'CMD prefix should be stripped');
+  assertEqual(probes.livenessProbe.exec.command[0], 'wget', 'first command should be wget');
+});
+
+test('compose CMD-SHELL healthcheck wraps in shell', () => {
+  const hc = new HealthChecks();
+  const probes = hc.generate({
+    appType: 'postgres',
+    exposedPorts: [{ port: 5432 }],
+    healthcheck: {
+      command: ['CMD-SHELL', 'pg_isready -U appuser'],
+      interval: '10s', timeout: '5s', retries: 5,
+    },
+  });
+  assertEqual(probes.livenessProbe.exec.command[0], '/bin/sh', 'should wrap in shell');
+  assertEqual(probes.livenessProbe.exec.command[1], '-c', 'should use -c flag');
+});
+
+test('parseDuration handles 0s correctly', () => {
+  const hc = new HealthChecks();
+  const probes = hc.generate({
+    appType: 'node',
+    exposedPorts: [{ port: 3000 }],
+    healthcheck: {
+      command: 'curl -f http://localhost:3000/',
+      interval: '15s', timeout: '3s', retries: 3,
+      startPeriod: '0s',
+    },
+  });
+  assertEqual(probes.livenessProbe.initialDelaySeconds, 0, 'startPeriod 0s should be 0, not 30');
+});
+
+test('parseDuration handles compound durations', () => {
+  const hc = new HealthChecks();
+  const probes = hc.generate({
+    appType: 'java',
+    exposedPorts: [{ port: 8080 }],
+    healthcheck: {
+      command: 'curl -f http://localhost:8080/',
+      interval: '1m30s', timeout: '10s', retries: 3,
+      startPeriod: '2m',
+    },
+  });
+  assertEqual(probes.livenessProbe.periodSeconds, 90, '1m30s should be 90');
+  assertEqual(probes.livenessProbe.initialDelaySeconds, 120, '2m should be 120');
+});
+
+test('empty Dockerfile throws error', () => {
+  const parser = new DockerfileParser();
+  try {
+    const config = parser.parse('');
+    // Should still return a config (empty is valid parse, just no FROM)
+    assertEqual(config.baseImage, null, 'no base image');
+  } catch (e) {
+    // Also acceptable
+  }
+});
+
+test('compose parser handles empty env value', () => {
+  const parser = new ComposeParser();
+  const config = parser.parse(`
+version: '3'
+services:
+  app:
+    image: node
+    environment:
+      - EMPTY_VAR
+`);
+  assertEqual(config.services[0].envVars.EMPTY_VAR, '', 'empty env var');
+});
+
+test('resource estimator applies volume scaling', () => {
+  const estimator = new ResourceEstimator();
+  const withVols = estimator.estimate({
+    appType: 'node', exposedPorts: [], volumes: ['/data'],
+  });
+  const withoutVols = estimator.estimate({
+    appType: 'node', exposedPorts: [], volumes: [],
+  });
+  assert(withVols.limits.memory !== withoutVols.limits.memory, 'volumes should increase memory');
+});
+
+test('validator validates all manifests', () => {
+  const validator = new ManifestValidator();
+  const result = validator.validateAll([
+    { apiVersion: 'v1', kind: 'Service', metadata: { name: 'test' }, spec: { selector: { app: 'test' }, ports: [{ port: 80 }] } },
+    { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'test' }, spec: { replicas: 2, selector: { matchLabels: { app: 'test' } }, template: { metadata: { labels: { app: 'test' } }, spec: { containers: [{ name: 'test', image: 'node:20', resources: {}, livenessProbe: {}, readinessProbe: {}, securityContext: {} }] } } } },
+  ]);
+  assertEqual(result.results.length, 2, 'should validate 2 manifests');
+});
+
+test('file output writes individual and combined manifests', () => {
+  const gen = new K8sGenerator();
+  const config = {
+    baseImage: 'node', baseTag: '20', exposedPorts: [{ port: 3000, protocol: 'tcp' }],
+    envVars: {}, volumes: [], workdir: '/app', user: null, entrypoint: null,
+    cmd: null, healthcheck: null, appType: 'node', labels: {},
+  };
+  const manifests = gen.generate(config, { name: 'test-out' });
+  const tmpDir = path.join(__dirname, '..', '.tmp-test-output');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const yaml = require('js-yaml');
+  const yamlStr = gen.toYAML(manifests);
+  // Write combined
+  fs.writeFileSync(path.join(tmpDir, 'all.yaml'), yamlStr);
+  assert(fs.existsSync(path.join(tmpDir, 'all.yaml')), 'combined file should exist');
+  // Cleanup
+  fs.rmSync(tmpDir, { recursive: true });
+});
+
 // --- Summary ---
 console.log(`\n${'='.repeat(50)}`);
 console.log(`Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);

@@ -94,7 +94,11 @@ class HealthChecks {
 
   _fromDockerHealthcheck(hc) {
     const command = Array.isArray(hc.command)
-      ? (hc.command[0] === 'CMD-SHELL' ? ['/bin/sh', '-c', hc.command.slice(1).join(' ')] : hc.command)
+      ? (hc.command[0] === 'CMD-SHELL'
+          ? ['/bin/sh', '-c', hc.command.slice(1).join(' ')]
+          : hc.command[0] === 'CMD'
+            ? hc.command.slice(1)
+            : hc.command)
       : ['/bin/sh', '-c', hc.command];
 
     return {
@@ -194,11 +198,12 @@ class HealthChecks {
   _parseDuration(str) {
     if (typeof str === 'number') return str;
     let seconds = 0;
+    let matched = false;
     const minMatch = str.match(/(\d+)m/);
     const secMatch = str.match(/(\d+)s/);
-    if (minMatch) seconds += parseInt(minMatch[1], 10) * 60;
-    if (secMatch) seconds += parseInt(secMatch[1], 10);
-    return seconds || 30;
+    if (minMatch) { seconds += parseInt(minMatch[1], 10) * 60; matched = true; }
+    if (secMatch) { seconds += parseInt(secMatch[1], 10); matched = true; }
+    return matched ? seconds : 30;
   }
 }
 

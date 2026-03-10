@@ -270,7 +270,7 @@ class DockerfileParser {
       config.appType = 'node';
     } else if (image.includes('python') || runs.includes('pip ') || runs.includes('pipenv')) {
       config.appType = 'python';
-    } else if (image.includes('golang') || image.includes('go') || runs.includes('go build')) {
+    } else if (image.includes('golang') || /\bgo[:\s]/.test(image) || image === 'go' || runs.includes('go build')) {
       config.appType = 'golang';
     } else if (image.includes('java') || image.includes('maven') || image.includes('gradle') || image.includes('temurin') || image.includes('tomcat') || image.includes('spring') || runs.includes('mvn ') || runs.includes('gradle ')) {
       config.appType = 'java';
