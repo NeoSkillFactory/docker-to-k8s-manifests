@@ -4,7 +4,7 @@
 
 > Automatically generate optimized Kubernetes deployment manifests from Dockerfile and docker-compose configurations with proper resource limits and health checks.
 
-docker-to-k8s-manifests is a skill that automatically generate optimized kubernetes deployment manifests from dockerfile and docker-compose configurations with proper resource limits and health checks.  
+docker-to-k8s-manifests Automatically generate optimized kubernetes deployment manifests from dockerfile and docker-compose configurations with proper resource limits and health checks.  
 See the source code for full details and usage instructions.
 
 ## GitHub
